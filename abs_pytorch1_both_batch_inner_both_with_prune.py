@@ -42,7 +42,7 @@ args = parser.parse_args()
 
 config = {}
 config['gpu_id'] = '0'
-config['print_level'] = 2
+config['print_level'] = 0
 config['random_seed'] = 333
 config['channel_last'] = 0
 config['w'] = 32
