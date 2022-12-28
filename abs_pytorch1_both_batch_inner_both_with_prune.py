@@ -977,7 +977,7 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
         if device == 'cuda':
             label_mask = torch.zeros([ctask_batch_size, num_classes]).cuda()
         else:
-                label_mask = torch.zeros([ctask_batch_size, num_classes])
+            label_mask = torch.zeros([ctask_batch_size, num_classes])
         for i in range(ctask_batch_size):
             label_mask[i, samp_labels[i]] = 1
         # print(label_mask)
@@ -2865,6 +2865,11 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         print(str(model_filepath), mode,'check', max(reasrs), max(reasr_per_labels))
     else:
         print(str(model_filepath), 'mask check', 0)
+
+    print('#################')
+    print(reasrs)
+    print(label_results)
+    print('#################')
 
     optm_end = time.time()
     for info in reasr_info:
