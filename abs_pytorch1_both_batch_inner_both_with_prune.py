@@ -2472,7 +2472,7 @@ def test(model, model_type, test_xs, test_ys, children, target_layers, sample_la
     for i in range(min(2, saved_images.shape[0])):
         skimage.io.imsave(RE_img[:-4]+'_{0}.png'.format(i), saved_images[i])
 
-    rt_images = t_images
+    rt_images = t_images #reverse engineered target image
     if Print_Level > 0:
         print(np.amin(rt_images), np.amax(rt_images))
 
@@ -2484,12 +2484,12 @@ def test(model, model_type, test_xs, test_ys, children, target_layers, sample_la
             batch_data = batch_data.cuda()
         preds = model(batch_data)
         fpreds.append(preds.cpu().detach().numpy())
-    fpreds = np.concatenate(fpreds)
+    fpreds = np.concatenate(fpreds) #prediction on rt_image
 
     preds = np.argmax(fpreds, axis=1)
     print(preds)
     score = float(np.sum(optz_label == preds))/float(yt.shape[0])
-    print('target label', optz_label, 'score', score)
+    print('target label', optz_label, 'score', score) # optz_label target label; score: ASR
     # score for each label
     tscores = []
     label_results = []
@@ -2878,10 +2878,10 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
             freasr = 0
             freasr_per_label = 0
             f_id = 0
-        # for i in range(len(reasr_info)):
-        #     f.write('reasr info {0}\n'.format( ' '.join([str(_) for _ in reasr_info[i]]) ))
-        # f.write('{0} {1} {2} {3} {4} {5} {6} {7}\n'.format(\
-        #         model_filepath, model_type, 'mode', freasr, freasr_per_label, 'time', sample_end - start, optm_end - sample_end) )
+        for i in range(len(reasr_info)):
+            f.write('reasr info {0}\n'.format( ' '.join([str(_) for _ in reasr_info[i]]) ))
+        f.write('{0} {1} {2} {3} {4} {5} {6} {7}\n'.format(\
+                model_filepath, model_type, 'mode', freasr, freasr_per_label, 'time', sample_end - start, optm_end - sample_end) )
         f.write('mask {0} {1} {2}\n'.format(model_filepath, freasr, freasr_per_label, ))
 '''
 class Avgpool2d(nn.Module):
