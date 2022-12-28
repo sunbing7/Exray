@@ -42,7 +42,7 @@ args = parser.parse_args()
 
 config = {}
 config['gpu_id'] = '0'
-config['print_level'] = 0
+config['print_level'] = 2
 config['random_seed'] = 333
 config['channel_last'] = 0
 config['w'] = 32
@@ -2826,7 +2826,7 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
 
     neuron_dict[list(nds[0].keys())[0]] = neurons_add
 
-    print('Compromised Neuron Candidates (Layer, Neuron, Target_Label)', neuron_dict)
+    print('Compromised Neuron Candidates (Layer, Neuron, Target_Label)', neuron_dict)   # for each label, find sensitive neuron
     print('n_neurons_dict', n_neurons_dict)
 
     # neuron_dict['/home/share/trojai/trojai-round2-dataset/id-00000001/model.pt'] = [('InvertedResidual_18', 456, 6, 1.8939729, 10)]
@@ -2880,8 +2880,8 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
             f_id = 0
         for i in range(len(reasr_info)):
             f.write('reasr info {0}\n'.format( ' '.join([str(_) for _ in reasr_info[i]]) ))
-        f.write('{0} {1} {2} {3} {4} {5} {6} {7}\n'.format(\
-                model_filepath, model_type, 'mode', freasr, freasr_per_label, 'time', sample_end - start, optm_end - sample_end) )
+        # f.write('{0} {1} {2} {3} {4} {5} {6} {7}\n'.format(\
+        #         model_filepath, model_type, 'mode', freasr, freasr_per_label, 'time', sample_end - start, optm_end - sample_end) )
         f.write('mask {0} {1} {2}\n'.format(model_filepath, freasr, freasr_per_label, ))
 '''
 class Avgpool2d(nn.Module):
