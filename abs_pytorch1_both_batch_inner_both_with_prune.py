@@ -2870,6 +2870,8 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
     print(reasrs)
     print(reasr_per_labels)
     print(label_results)
+    print(inner_diff1)
+    print(inner_diff2)
     print('#################')
 
     optm_end = time.time()
