@@ -16,14 +16,25 @@ import torch
 import torch.nn.functional as F
 import pickle
 import time
+
+import models
+from models.selector import *
+from models.resnet_cifar import resnet18
+import torch.nn.functional as F
+
+IMG_ROW=32
+IMG_COL=32
+IMG_CH=3
+
 np.set_printoptions(precision=2, linewidth=200, threshold=10000)
 parser = argparse.ArgumentParser(description='Fake Trojan Detector to Demonstrate Test and Evaluation Infrastructure.')
-parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model.pt')
+parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_green.pt')
 parser.add_argument('--result_filepath', type=str, help='File path to the file where output result should be written. After execution this file should contain a single line with a single floating point trojan probability.', default='./output')
 parser.add_argument('--scratch_dirpath', type=str, help='File path to the folder where scratch disk space exists. This folder will be empty at execution start and will be deleted at completion of execution.', default='./scratch')
 parser.add_argument('--examples_dirpath', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./example')
 parser.add_argument('--config', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./example')
-
+parser.add_argument('--arch', type=str, default='resnet18',
+                    choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'MobileNetV2', 'vgg19_bn', 'vgg11_bn'])
 args = parser.parse_args()
 
 # with open(args.config) as config_file:
@@ -34,8 +45,8 @@ config['gpu_id'] = '0'
 config['print_level'] = 2
 config['random_seed'] = 333
 config['channel_last'] = 0
-config['w'] = 224
-config['h'] = 224
+config['w'] = 32
+config['h'] = 32
 config['reasr_bound'] = 0.8
 config['batch_size'] = 4
 config['has_softmax'] = 0
@@ -110,6 +121,8 @@ re_epochs = int(config['re_epochs'])
 n_re_imgs_per_label = int(config['n_re_imgs_per_label'])
 n_sample_imgs_per_label = int(config['n_sample_imgs_per_label'])
 
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def gaussian(window_size, sigma):
     gauss = torch.Tensor([math.exp(-(x - window_size//2)**2/float(2*sigma**2)) for x in range(window_size)])
@@ -256,16 +269,17 @@ def check_values(images, labels, model, children, target_layers, num_classes):
         max_vals = []
         for i in range( math.ceil(float(len(images))/batch_size) ):
             batch_data = torch.FloatTensor(images[batch_size*i:batch_size*(i+1)])
-            batch_data = batch_data.cuda()
+            if device == 'cuda':
+                batch_data = batch_data.cuda()
             inner_outputs = temp_model1(batch_data).cpu().detach().numpy()
             if channel_last:
                 n_neurons = inner_outputs.shape[-1]
             else:
                 n_neurons = inner_outputs.shape[1]
-            
+
             n_neurons_dict[layer_i] = n_neurons
             max_vals.append(np.amax(inner_outputs, (1,2,3)))
-        
+
         max_vals = np.concatenate(max_vals)
 
         key = '{0}_{1}'.format(children[layer_i].__class__.__name__, layer_i)
@@ -286,7 +300,8 @@ def check_values(images, labels, model, children, target_layers, num_classes):
     flogits = []
     for i in range( math.ceil(float(len(images))/batch_size) ):
         batch_data = torch.FloatTensor(images[batch_size*i:batch_size*(i+1)])
-        batch_data = batch_data.cuda()
+        if device == 'cuda':
+            batch_data = batch_data.cuda()
         logits = model(batch_data).cpu().detach().numpy()
         flogits.append(logits)
     flogits = np.concatenate(flogits, axis=0)
@@ -366,7 +381,8 @@ def sample_neuron(sample_layers, images, labels, model, children, target_layers,
         for input_i in range( math.ceil(float(n_images)/batch_size) ):
             cbatch_size = min(batch_size, n_images - input_i*batch_size)
             batch_data = torch.FloatTensor(images[batch_size*input_i:batch_size*(input_i+1)])
-            batch_data = batch_data.cuda()
+            if device == 'cuda':
+                batch_data = batch_data.cuda()
             inner_outputs = temp_model1(batch_data).cpu().detach().numpy()
             if channel_last:
                 n_neurons = inner_outputs.shape[-1]
@@ -402,9 +418,12 @@ def sample_neuron(sample_layers, images, labels, model, children, target_layers,
 
                 f_h_t = np.concatenate(l_h_t, axis=0)
                 # print(f_h_t.shape, cbatch_size, sample_batch_size, n_samples)
-
-                f_h_t_t = torch.FloatTensor(f_h_t).cuda()
+                if device == 'cuda':
+                    f_h_t_t = torch.FloatTensor(f_h_t).cuda()
+                else:
+                    f_h_t_t = torch.FloatTensor(f_h_t)
                 fps = temp_model2(f_h_t_t).cpu().detach().numpy()
+
                 # if Print_Level > 1:
                 #     print(nt, n_neurons, 'inner_outputs', inner_outputs.shape, 'f_h_t', f_h_t.shape, 'fps', fps.shape)
                 for neuron in range(csample_batch_size):
@@ -423,7 +442,8 @@ def sample_neuron(sample_layers, images, labels, model, children, target_layers,
 
                 del f_h_t_t
             del batch_data, inner_outputs
-            torch.cuda.empty_cache()
+            if device == 'cuda':
+                torch.cuda.empty_cache()
 
         del temp_model1, temp_model2
     return all_ps, sample_layers
@@ -432,7 +452,7 @@ def sample_neuron(sample_layers, images, labels, model, children, target_layers,
 def find_min_max(model_name, sample_layers, neuron_ks, max_ps, max_vals, imgs, n_classes, n_samples, n_imgs, base_l, cut_val=20, top_k = 10, addon=''):
     if base_l >= 0:
         n_imgs = n_imgs//n_classes
-    
+
     min_ps = {}
     min_vals = []
     for k in neuron_ks:
@@ -468,7 +488,7 @@ def find_min_max(model_name, sample_layers, neuron_ks, max_ps, max_vals, imgs, n
                     continue
                 fvs.append(v)
                 # print(nk, l, v)
-        
+
         if len(fvs) > 0:
             min_ps[k] = (ml, ls.count(ml), np.amin(fvs), fvs)
             min_vals.append(np.amin(fvs))
@@ -483,7 +503,7 @@ def find_min_max(model_name, sample_layers, neuron_ks, max_ps, max_vals, imgs, n
         #     print(1907, base_l, min_ps[k])
         # if k[1] == 1184:
         #     print(1184, base_l, min_ps[k])
-   
+
     keys = min_ps.keys()
     keys = []
     if base_l < 0:
@@ -634,7 +654,7 @@ def read_all_ps(model_name, all_ps, sample_layers, num_classes, top_k=10, cut_va
 
 def mask_img():
     mask = np.zeros((h, w), dtype=np.float32)
-    Troj_w = int(np.sqrt(Troj_size) * 0.8) 
+    Troj_w = int(np.sqrt(Troj_size) * 0.8)
     for i in range(h):
         for j in range(w):
             if j >= h/2 and j < h/2 + Troj_w \
@@ -672,7 +692,7 @@ def loss_fn(inner_outputs_b, inner_outputs_a, logits, batch_labels, con_mask, ne
         # mask_cond1 = torch.gt(mask_loss, Troj_size)
         # mask_cond2 = torch.gt(mask_loss, Troj_size * 1.2)
         mask_add_loss += torch.where(mask_cond1, torch.where(mask_cond2, 2 * re_mask_weight * mask_loss, 1 * re_mask_weight * mask_loss), 0.00 * mask_loss)
-    logits_loss = torch.sum(logits * label_mask) 
+    logits_loss = torch.sum(logits * label_mask)
     if mode == 'mask':
         loss +=  mask_add_loss
         loss += - 1e2 * logits_loss
@@ -704,23 +724,23 @@ def filter_preprocess(batch_data, use_delta, cre_batch_size, test_one=False):
             in_data_cal[i] = torch.reshape( torch.mm( torch.reshape( in_data_cat[i], (-1,12)), use_delta[i]), [h,w,3])
     in_data = torch.transpose(torch.clamp(in_data_cal, 0., 1.), 1, 3)
     return in_data
-    
+
 def test_task_modes(model_type, model, children, oimages, olabels, weights_file, Troj_Layer, Troj_Neurons, samp_labels, base_labels, Troj_size, re_epochs, num_classes, n_re_imgs_per_label, n_neurons, ctask_batch_size):
-    
+
     before_block = []
     def get_before_block():
         def hook(model, input, output):
             for ip in input:
                 before_block.append( ip.clone() )
         return hook
-    
+
     after_bn3 = []
     def get_after_bn3():
         def hook(model, input, output):
             for ip in output:
                 after_bn3.append( ip.clone() )
         return hook
-    
+
     after_iden = []
     def get_after_iden():
         def hook(model, input, output):
@@ -948,11 +968,16 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
     filter_logits_losses = np.zeros(ctask_batch_size) - np.inf
     for mode in ['mask', 'filter']:
     # for mode in ['filter']:
-        neuron_mask = torch.zeros([ctask_batch_size, n_neurons,1,1]).cuda()
+        if device == 'cuda':
+            neuron_mask = torch.zeros([ctask_batch_size, n_neurons,1,1]).cuda()
+        else:
+            neuron_mask = torch.zeros([ctask_batch_size, n_neurons, 1, 1])
         for i in range(ctask_batch_size):
             neuron_mask[i,Troj_Neurons[i],:,:] = 1
-
-        label_mask = torch.zeros([ctask_batch_size, num_classes]).cuda()
+        if device == 'cuda':
+            label_mask = torch.zeros([ctask_batch_size, num_classes]).cuda()
+        else:
+                label_mask = torch.zeros([ctask_batch_size, num_classes])
         for i in range(ctask_batch_size):
             label_mask[i, samp_labels[i]] = 1
         # print(label_mask)
@@ -962,12 +987,21 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
             ovar_to_data[i*n_re_imgs_per_label:(i+1)*n_re_imgs_per_label,i] = 1
 
         mask0 = nc_mask_img()
-        mask0= torch.FloatTensor(mask0).cuda()
+        if device == 'cuda':
+            mask0= torch.FloatTensor(mask0).cuda()
+        else:
+            mask0 = torch.FloatTensor(mask0)
         mask = np.tile(mask_img().reshape((1,1,h,w)), (ctask_batch_size,1,1,1)) * 6 - 4
-        mask= torch.FloatTensor(mask).cuda()
+        if device == 'cuda':
+            mask= torch.FloatTensor(mask).cuda()
+        else:
+            mask = torch.FloatTensor(mask)
         mask.requires_grad = True
         if mode == 'filter':
-            delta= torch.rand(ctask_batch_size,12,3).cuda() * 0.0 - 2
+            if device == 'cuda':
+                delta= torch.rand(ctask_batch_size,12,3).cuda() * 0.0 - 2
+            else:
+                delta = torch.rand(ctask_batch_size, 12, 3) * 0.0 - 2
             delta[:,0,0] = 2
             delta[:,1,1] = 2
             delta[:,2,2] = 2
@@ -975,7 +1009,10 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
             optimizer = torch.optim.Adam([delta], lr=re_filter_lr)
         else:
             # delta = torch.randn(1,3,h,w).cuda()
-            delta = torch.rand(ctask_batch_size,3,1,1).cuda() * 2 - 1
+            if device == 'cuda':
+                delta = torch.rand(ctask_batch_size,3,1,1).cuda() * 2 - 1
+            else:
+                delta = torch.rand(ctask_batch_size, 3, 1, 1) * 2 - 1
             delta.requires_grad = True
             optimizer = torch.optim.Adam([delta, mask], lr=re_mask_lr)
         print('before optimizing',)
@@ -1000,14 +1037,21 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
                 after_bns.clear()
 
                 batch_data   = torch.FloatTensor(images[re_batch_size*i:re_batch_size*(i+1)])
-                batch_data   = batch_data.cuda()
+                if device == 'cuda':
+                    batch_data   = batch_data.cuda()
+
                 batch_labels = torch.LongTensor(labels[re_batch_size*i:re_batch_size*(i+1)])
-                batch_labels = batch_labels.cuda()
+                if device == 'cuda':
+                    batch_labels = batch_labels.cuda()
                 batch_v2d    = torch.FloatTensor(var_to_data[re_batch_size*i:re_batch_size*(i+1)])
-                batch_v2d    = batch_v2d.cuda()
+                if device == 'cuda':
+                    batch_v2d    = batch_v2d.cuda()
 
                 batch_data = batch_data.repeat([nrepeats,1,1,1])
-                random_perturbation = torch.rand(cre_batch_size*nrepeats,3,h,w).cuda() * 0.1 - 0.05
+                if device == 'cuda':
+                    random_perturbation = torch.rand(cre_batch_size*nrepeats,3,h,w).cuda() * 0.1 - 0.05
+                else:
+                    random_perturbation = torch.rand(cre_batch_size * nrepeats, 3, h, w) * 0.1 - 0.05
                 batch_data = batch_data + random_perturbation
                 batch_data = torch.clamp(batch_data, 0., 1.)
                 batch_labels = batch_labels.repeat([nrepeats])
@@ -1036,7 +1080,7 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
 
                 logits = model(in_data)
                 logits_np = logits.cpu().detach().numpy()
-                
+
                 if model_type == 'ResNet':
                     after_bn3_t = torch.stack(after_bn3, 0)
                     iden = None
@@ -1164,7 +1208,10 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
                 optz_labels.append(optz_label)
             # update use label
             del label_mask
-            label_mask = torch.zeros([ctask_batch_size, num_classes]).cuda()
+            if device == 'cuda':
+                label_mask = torch.zeros([ctask_batch_size, num_classes]).cuda()
+            else:
+                label_mask = torch.zeros([ctask_batch_size, num_classes])
             for i in range(ctask_batch_size):
                 label_mask[i,use_labels[i]] = 1
 
@@ -1211,23 +1258,23 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
         handle.remove()
 
     return task_modes
-    
+
 def reverse_engineer(model_type, model, children, oimages, olabels, weights_file, Troj_Layer, Troj_Neurons, samp_labels, base_labels, Troj_size, re_epochs, num_classes, n_re_imgs_per_label, n_neurons, ctask_batch_size, mode):
-    
+
     before_block = []
     def get_before_block():
         def hook(model, input, output):
             for ip in input:
                 before_block.append( ip.clone() )
         return hook
-    
+
     after_bn3 = []
     def get_after_bn3():
         def hook(model, input, output):
             for ip in output:
                 after_bn3.append( ip.clone() )
         return hook
-    
+
     after_iden = []
     def get_after_iden():
         def hook(model, input, output):
@@ -1451,12 +1498,16 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
     print('Target Layer', Troj_Layer, children[Troj_Layer], 'Neuron', Troj_Neurons, 'Target Label', samp_labels)
 
     cntasks = ctask_batch_size
-
-    neuron_mask = torch.zeros([cntasks, n_neurons,1,1]).cuda()
+    if device == 'cuda':
+        neuron_mask = torch.zeros([cntasks, n_neurons,1,1]).cuda()
+    else:
+        neuron_mask = torch.zeros([cntasks, n_neurons, 1, 1])
     for i in range(cntasks):
         neuron_mask[i,Troj_Neurons[i],:,:] = 1
-
-    label_mask = torch.zeros([cntasks, num_classes]).cuda()
+    if device == 'cuda':
+        label_mask = torch.zeros([cntasks, num_classes]).cuda()
+    else:
+        label_mask = torch.zeros([cntasks, num_classes])
     for i in range(cntasks):
         label_mask[i, samp_labels[i]] = 1
 
@@ -1465,12 +1516,21 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
         ovar_to_data[i*n_re_imgs_per_label:(i+1)*n_re_imgs_per_label,i] = 1
 
     mask0 = nc_mask_img()
-    mask0= torch.FloatTensor(mask0).cuda()
+    if device == 'cuda':
+        mask0= torch.FloatTensor(mask0).cuda()
+    else:
+        mask0 = torch.FloatTensor(mask0)
     mask = np.tile(mask_img().reshape((1,1,h,w)), (cntasks,1,1,1)) * 6 - 4
-    mask= torch.FloatTensor(mask).cuda()
+    if device == 'cuda':
+        mask= torch.FloatTensor(mask).cuda()
+    else:
+        mask= torch.FloatTensor(mask)
     mask.requires_grad = True
     if mode == 'filter':
-        delta= torch.rand(cntasks,12,3).cuda() * 0.0 - 2
+        if device == 'cuda':
+            delta= torch.rand(cntasks,12,3).cuda() * 0.0 - 2
+        else:
+            delta = torch.rand(cntasks, 12, 3) * 0.0 - 2
         delta[:,0,0] = 2
         delta[:,1,1] = 2
         delta[:,2,2] = 2
@@ -1478,7 +1538,10 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
         optimizer = torch.optim.Adam([delta], lr=re_filter_lr)
     else:
         # delta = torch.randn(1,3,h,w).cuda()
-        delta = torch.rand(cntasks,3,1,1).cuda() * 2 - 1
+        if device == 'cuda':
+            delta = torch.rand(cntasks,3,1,1).cuda() * 2 - 1
+        else:
+            delta = torch.rand(cntasks, 3, 1, 1) * 2 - 1
         delta.requires_grad = True
         optimizer = torch.optim.Adam([delta, mask], lr=re_mask_lr)
     facc = 0
@@ -1498,14 +1561,20 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
             after_bns.clear()
 
             batch_data   = torch.FloatTensor(images[re_batch_size*i:re_batch_size*(i+1)])
-            batch_data   = batch_data.cuda()
+            if device == 'cuda':
+                batch_data   = batch_data.cuda()
             batch_labels = torch.LongTensor(labels[re_batch_size*i:re_batch_size*(i+1)])
-            batch_labels = batch_labels.cuda()
+            if device == 'cuda':
+                batch_labels = batch_labels.cuda()
             batch_v2d    = torch.FloatTensor(var_to_data[re_batch_size*i:re_batch_size*(i+1)])
-            batch_v2d    = batch_v2d.cuda()
+            if device == 'cuda':
+                batch_v2d    = batch_v2d.cuda()
 
             batch_data = batch_data.repeat([nrepeats,1,1,1])
-            random_perturbation = torch.rand(cre_batch_size*nrepeats,3,h,w).cuda() * 0.1 - 0.05
+            if device == 'cuda':
+                random_perturbation = torch.rand(cre_batch_size*nrepeats,3,h,w).cuda() * 0.1 - 0.05
+            else:
+                random_perturbation = torch.rand(cre_batch_size * nrepeats, 3, h, w) * 0.1 - 0.05
             batch_data = batch_data + random_perturbation
             batch_data = torch.clamp(batch_data, 0., 1.)
             batch_labels = batch_labels.repeat([nrepeats])
@@ -1538,7 +1607,7 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
             logits_np = logits.cpu().detach().numpy()
             # end_time = time.time()
             # print('epoch forward time', e, end_time - start_time)
-            
+
             if model_type == 'ResNet':
                 after_bn3_t = torch.stack(after_bn3, 0)
                 iden = None
@@ -1670,7 +1739,10 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
             optz_labels.append(optz_label)
         # update use label
         del label_mask
-        label_mask = torch.zeros([cntasks, num_classes]).cuda()
+        if device == 'cuda':
+            label_mask = torch.zeros([cntasks, num_classes]).cuda()
+        else:
+            label_mask = torch.zeros([cntasks, num_classes])
         for i in range(cntasks):
             label_mask[i,use_labels[i]] = 1
 
@@ -1696,13 +1768,13 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
 
     delta = use_delta.cpu().detach().numpy()
     use_mask = use_mask.cpu().detach().numpy()
-    
+
     j = 0
-    return_accs   = [ None for _ in range(ctask_batch_size)] 
-    return_deltas = [ None for _ in range(ctask_batch_size)] 
-    return_masks  = [ None for _ in range(ctask_batch_size)] 
-    return_labels = [ None for _ in range(ctask_batch_size)] 
-    return_ssims  = [ None for _ in range(ctask_batch_size)] 
+    return_accs   = [ None for _ in range(ctask_batch_size)]
+    return_deltas = [ None for _ in range(ctask_batch_size)]
+    return_masks  = [ None for _ in range(ctask_batch_size)]
+    return_labels = [ None for _ in range(ctask_batch_size)]
+    return_ssims  = [ None for _ in range(ctask_batch_size)]
     for i in range(ctask_batch_size):
         return_accs[i]   = faccs[j]
         return_deltas[i] = delta[j:j+1].copy()
@@ -1797,23 +1869,23 @@ def re_mask(model_type, model, neuron_dict, children, images, labels, n_neurons_
 
         print('mask neurons', tuple(zip(mask_neurons, mask_samp_labels, mask_base_labels)))
         print('filter neurons', tuple(zip(filter_neurons, filter_samp_labels, filter_base_labels)))
-            
+
         for mode in ['mask', 'filter']:
             if mode == 'mask':
                 cneurons     = mask_neurons
                 clayers      = mask_layers
                 csamp_labels = mask_samp_labels
                 cbase_labels = mask_base_labels
-                tRE_imgs   = mask_RE_imgs  
-                tRE_masks  = mask_RE_masks 
+                tRE_imgs   = mask_RE_imgs
+                tRE_masks  = mask_RE_masks
                 tRE_deltas = mask_RE_deltas
             else:
                 cneurons     = filter_neurons
                 clayers      = filter_layers
                 csamp_labels = filter_samp_labels
                 cbase_labels = filter_base_labels
-                tRE_imgs     = filter_RE_imgs  
-                tRE_masks    = filter_RE_masks 
+                tRE_imgs     = filter_RE_imgs
+                tRE_masks    = filter_RE_masks
                 tRE_deltas   = filter_RE_deltas
 
             for task_i in range(math.ceil(float(len(cneurons))/task_batch_size)):
@@ -1839,7 +1911,8 @@ def re_mask(model_type, model, neuron_dict, children, images, labels, n_neurons_
                     print('analyze one batch time', task_i, ctask_batch_size, end_time - start_time)
 
                     # clear cache
-                    torch.cuda.empty_cache()
+                    if device == 'cuda':
+                        torch.cuda.empty_cache()
 
                     for task_j in range(ctask_batch_size):
                         acc = accs[task_j]
@@ -1870,7 +1943,7 @@ def stamp(n_img, delta, mask):
     mask0 = nc_mask_img()
     mask = mask * mask0
     r_img = n_img.copy()
-    mask = mask.reshape((1,1,224,224))
+    mask = mask.reshape((1,1,IMG_ROW,IMG_ROW))
     r_img = n_img * (1-mask) + delta * mask
     return r_img
 
@@ -1886,15 +1959,20 @@ def mask_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, chi
 
     bidxs = np.array(np.where(fys==base_label)[0])
     bfxs = fxs[bidxs]
-    
-    batch_data = torch.FloatTensor(bfxs).cuda()
+    if device == 'cuda':
+        batch_data = torch.FloatTensor(bfxs).cuda()
+    else:
+        batch_data = torch.FloatTensor(bfxs)
     bbinner_outputs = F.relu(temp_model1(batch_data)).cpu().detach().numpy()
     bblogits = model(batch_data).cpu()
     bbpreds = F.softmax(bblogits, dim=1).cpu().detach().numpy()
     bblogits = bblogits.cpu().detach().numpy()
-    
+
     tfxs = fxs2[bidxs]
-    batch_data = torch.FloatTensor(tfxs).cuda()
+    if device == 'cuda':
+        batch_data = torch.FloatTensor(tfxs).cuda()
+    else:
+        batch_data = torch.FloatTensor(tfxs)
     tbinner_outputs = F.relu(temp_model1(batch_data)).cpu().detach().numpy()
     tblogits = model(batch_data).cpu()
     tbpreds = F.softmax(tblogits, dim=1).cpu().detach().numpy()
@@ -1912,11 +1990,13 @@ def mask_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, chi
     # update optz label
     optz_label = target_label
     acc = np.sum(tbpreds == optz_label)/ float(len(tbpreds))
-    
+
     bidxs = np.array(np.where(fys==optz_label)[0])
     bfxs = fxs[bidxs]
-    
-    batch_data = torch.FloatTensor(bfxs).cuda()
+    if device == 'cuda':
+        batch_data = torch.FloatTensor(bfxs).cuda()
+    else:
+        batch_data = torch.FloatTensor(bfxs)
     boinner_outputs = F.relu(temp_model1(batch_data)).cpu().detach().numpy()
     bologits = model(batch_data).cpu()
     bopreds = F.softmax(bologits, dim=1).cpu().detach().numpy()
@@ -1932,12 +2012,15 @@ def mask_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, chi
     loss_option = 0
     base_acc1 = 1.0
     base_acc2 = 1.0
-    
+
     data_option = 0
     loss_option = 0
     for data_option in [0, 1]:
         mask = np.zeros((1,boinner_outputs.shape[1],1,1)) + 4
-        mask= torch.FloatTensor(mask).cuda()
+        if device == 'cuda':
+            mask= torch.FloatTensor(mask).cuda()
+        else:
+            mask = torch.FloatTensor(mask)
         mask.requires_grad = True
 
         if data_option == 0:
@@ -1962,10 +2045,12 @@ def mask_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, chi
                 optimizer.zero_grad()
                 temp_model2.zero_grad()
                 model.zero_grad()
-
-                batch_data_1   = torch.FloatTensor(np_inners_1[prune_batch_size*i:prune_batch_size*(i+1)]).cuda()
-                batch_data_2   = torch.FloatTensor(np_inners_2[prune_batch_size*i:prune_batch_size*(i+1)]).cuda()
-
+                if device == 'cuda':
+                    batch_data_1   = torch.FloatTensor(np_inners_1[prune_batch_size*i:prune_batch_size*(i+1)]).cuda()
+                    batch_data_2   = torch.FloatTensor(np_inners_2[prune_batch_size*i:prune_batch_size*(i+1)]).cuda()
+                else:
+                    batch_data_1   = torch.FloatTensor(np_inners_1[prune_batch_size*i:prune_batch_size*(i+1)])
+                    batch_data_2   = torch.FloatTensor(np_inners_2[prune_batch_size*i:prune_batch_size*(i+1)])
                 con_mask = torch.tanh(mask)/2.0 + 0.5
                 use_mask = con_mask
                 mixed_data_1 = use_mask * batch_data_2 + (1-use_mask) * batch_data_1
@@ -2064,9 +2149,12 @@ def mask_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, chi
 
             mixed_data_1 = nuse_mask * ninner_data_2 + (1-nuse_mask) * ninner_data_1
             mixed_data_2 = nuse_mask * ninner_data_1 + (1-nuse_mask) * ninner_data_2
-            mixed_data_1 = torch.FloatTensor(mixed_data_1).cuda()
-            mixed_data_2 = torch.FloatTensor(mixed_data_2).cuda()
-
+            if device == 'cuda':
+                mixed_data_1 = torch.FloatTensor(mixed_data_1).cuda()
+                mixed_data_2 = torch.FloatTensor(mixed_data_2).cuda()
+            else:
+                mixed_data_1 = torch.FloatTensor(mixed_data_1)
+                mixed_data_2 = torch.FloatTensor(mixed_data_2)
             mixed_logits_1 = temp_model2(mixed_data_1)
             mixed_logits_2 = temp_model2(mixed_data_2)
             print('base_label', base_label, 'mixed_logits_1', np.argmax(mixed_logits_1.cpu().detach().numpy(), axis=1))
@@ -2104,8 +2192,12 @@ def mask_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, chi
 
 def filter_stamp(n_img, trigger):
     start_time = time.time()
-    batch_data = torch.FloatTensor(n_img).cuda()
-    use_delta  = torch.FloatTensor(trigger).cuda()
+    if device == 'cuda':
+        batch_data = torch.FloatTensor(n_img).cuda()
+        use_delta  = torch.FloatTensor(trigger).cuda()
+    else:
+        batch_data = torch.FloatTensor(n_img)
+        use_delta  = torch.FloatTensor(trigger)
     # print(n_img.shape)
     in_data    = filter_preprocess(batch_data, use_delta, n_img.shape[0], test_one=True)
     r_img = in_data.cpu().detach().numpy()
@@ -2125,15 +2217,20 @@ def filter_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, c
 
     bidxs = np.array(np.where(fys==base_label)[0])
     bfxs = fxs[bidxs]
-    
-    batch_data = torch.FloatTensor(bfxs).cuda()
+    if device == 'cuda':
+        batch_data = torch.FloatTensor(bfxs).cuda()
+    else:
+        batch_data = torch.FloatTensor(bfxs)
     bbinner_outputs = F.relu(temp_model1(batch_data)).cpu().detach().numpy()
     bblogits = model(batch_data).cpu()
     bbpreds = F.softmax(bblogits, dim=1).cpu().detach().numpy()
     bblogits = bblogits.cpu().detach().numpy()
-    
+
     tfxs = fxs2[bidxs]
-    batch_data = torch.FloatTensor(tfxs).cuda()
+    if device == 'cuda':
+        batch_data = torch.FloatTensor(tfxs).cuda()
+    else:
+        batch_data = torch.FloatTensor(tfxs)
     tbinner_outputs = F.relu(temp_model1(batch_data)).cpu().detach().numpy()
     tblogits = model(batch_data).cpu()
     tbpreds = F.softmax(tblogits, dim=1).cpu().detach().numpy()
@@ -2151,11 +2248,13 @@ def filter_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, c
     # update optz label
     optz_label = target_label
     acc = np.sum(tbpreds == optz_label)/ float(len(tbpreds))
-    
+
     bidxs = np.array(np.where(fys==optz_label)[0])
     bfxs = fxs[bidxs]
-    
-    batch_data = torch.FloatTensor(bfxs).cuda()
+    if device == 'cuda':
+        batch_data = torch.FloatTensor(bfxs).cuda()
+    else:
+        batch_data = torch.FloatTensor(bfxs)
     boinner_outputs = F.relu(temp_model1(batch_data)).cpu().detach().numpy()
     bologits = model(batch_data).cpu()
     bopreds = F.softmax(bologits, dim=1).cpu().detach().numpy()
@@ -2171,12 +2270,15 @@ def filter_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, c
     loss_option = 0
     base_acc1 = 1.0
     base_acc2 = 1.0
-    
+
     data_option = 0
     loss_option = 0
     for data_option in [0, 1]:
         mask = np.zeros((1,boinner_outputs.shape[1],1,1)) + 4
-        mask= torch.FloatTensor(mask).cuda()
+        if device == 'cuda':
+            mask= torch.FloatTensor(mask).cuda()
+        else:
+            mask = torch.FloatTensor(mask)
         mask.requires_grad = True
 
         if data_option == 0:
@@ -2201,10 +2303,14 @@ def filter_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, c
                 optimizer.zero_grad()
                 temp_model2.zero_grad()
                 model.zero_grad()
-
-                batch_data_1   = torch.FloatTensor(np_inners_1[prune_batch_size*i:prune_batch_size*(i+1)]).cuda()
-                batch_data_2   = torch.FloatTensor(np_inners_2[prune_batch_size*i:prune_batch_size*(i+1)]).cuda()
-
+                if device == 'cuda':
+                    batch_data_1   = torch.FloatTensor(np_inners_1[prune_batch_size*i:prune_batch_size*(i+1)]).cuda()
+                    batch_data_2   = torch.FloatTensor(np_inners_2[prune_batch_size*i:prune_batch_size*(i+1)]).cuda()
+                else:
+                    batch_data_1 = torch.FloatTensor(
+                        np_inners_1[prune_batch_size * i:prune_batch_size * (i + 1)])
+                    batch_data_2 = torch.FloatTensor(
+                        np_inners_2[prune_batch_size * i:prune_batch_size * (i + 1)])
                 con_mask = torch.tanh(mask)/2.0 + 0.5
                 use_mask = con_mask
                 mixed_data_1 = use_mask * batch_data_2 + (1-use_mask) * batch_data_1
@@ -2303,9 +2409,12 @@ def filter_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, c
 
             mixed_data_1 = nuse_mask * ninner_data_2 + (1-nuse_mask) * ninner_data_1
             mixed_data_2 = nuse_mask * ninner_data_1 + (1-nuse_mask) * ninner_data_2
-            mixed_data_1 = torch.FloatTensor(mixed_data_1).cuda()
-            mixed_data_2 = torch.FloatTensor(mixed_data_2).cuda()
-
+            if device == 'cuda':
+                mixed_data_1 = torch.FloatTensor(mixed_data_1).cuda()
+                mixed_data_2 = torch.FloatTensor(mixed_data_2).cuda()
+            else:
+                mixed_data_1 = torch.FloatTensor(mixed_data_1)
+                mixed_data_2 = torch.FloatTensor(mixed_data_2)
             mixed_logits_1 = temp_model2(mixed_data_1)
             mixed_logits_2 = temp_model2(mixed_data_2)
             print('base_label', base_label, 'mixed_logits_1', np.argmax(mixed_logits_1.cpu().detach().numpy(), axis=1))
@@ -2342,7 +2451,7 @@ def filter_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, c
     return value > 0.95
 
 def test(model, model_type, test_xs, test_ys, children, target_layers, sample_layers, result, scratch_dirpath, num_classes):
-    
+
     re_batch_size = config['re_batch_size']
     if model_type == 'DenseNet':
         re_batch_size = max(re_batch_size // 4, 1)
@@ -2366,17 +2475,18 @@ def test(model, model_type, test_xs, test_ys, children, target_layers, sample_la
     rt_images = t_images
     if Print_Level > 0:
         print(np.amin(rt_images), np.amax(rt_images))
-    
+
     yt = np.zeros(len(rt_images)).astype(np.int32) + optz_label
     fpreds = []
     for i in range( math.ceil(float(len(rt_images))/re_batch_size) ):
         batch_data = torch.FloatTensor(rt_images[re_batch_size*i:re_batch_size*(i+1)])
-        batch_data = batch_data.cuda()
+        if device == 'cuda':
+            batch_data = batch_data.cuda()
         preds = model(batch_data)
         fpreds.append(preds.cpu().detach().numpy())
     fpreds = np.concatenate(fpreds)
 
-    preds = np.argmax(fpreds, axis=1) 
+    preds = np.argmax(fpreds, axis=1)
     print(preds)
     score = float(np.sum(optz_label == preds))/float(yt.shape[0])
     print('target label', optz_label, 'score', score)
@@ -2400,7 +2510,7 @@ def test(model, model_type, test_xs, test_ys, children, target_layers, sample_la
             best_base_label = i
 
     # if best_tscore >= 0.9:
-    #     # screen out low difference  
+    #     # screen out low difference
     #     final_layer_i  = -1
     #     # testing on last layer
     #     end_layer = len(children)-1
@@ -2413,7 +2523,7 @@ def test(model, model_type, test_xs, test_ys, children, target_layers, sample_la
     #         final_layer_i = layer_i
 
     #     temp_model1 = torch.nn.Sequential(*children[:final_layer_i+1])
-        
+
     #     test_idxs = np.array( np.where(test_ys == best_base_label)[0] )
     #     bfxs = clean_images[test_idxs]
     #     tfxs =    rt_images[test_idxs]
@@ -2431,7 +2541,7 @@ def test(model, model_type, test_xs, test_ys, children, target_layers, sample_la
     #         batch_data = batch_data.cuda()
     #         tinner_outputs.append( F.relu(temp_model1(batch_data)).cpu().detach().numpy() )
     #     tbinner_outputs = np.concatenate(tinner_outputs, axis=0)
-        
+
     #     test_idxs = np.array( np.where(test_ys == optz_label)[0] )
     #     bfxs = clean_images[test_idxs]
     #     tfxs =    rt_images[test_idxs]
@@ -2468,7 +2578,7 @@ def test(model, model_type, test_xs, test_ys, children, target_layers, sample_la
     if best_tscore > 0.99:
         if mode == 'mask':
             prune_flag = mask_prune_by_neuron_mask(test_xs, test_ys, t_images, best_base_label, tlabel, model, children, sample_layers)
-        else::
+        else:
             prune_flag = filter_prune_by_neuron_mask(test_xs, test_ys, t_images, best_base_label, tlabel, model, children, sample_layers)
         if prune_flag:
             best_tscore = 0
@@ -2489,8 +2599,19 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
     os.system('mkdir -p {0}'.format(os.path.join(scratch_dirpath, 'masks')))
     os.system('mkdir -p {0}'.format(os.path.join(scratch_dirpath, 'temps')))
     os.system('mkdir -p {0}'.format(os.path.join(scratch_dirpath, 'deltas')))
+    if args.arch == 'resnet18':
+        model = resnet18(num_classes=10).to(device)
 
-    model = torch.load(model_filepath).cuda()
+        state_dict = torch.load(model_filepath, map_location=device)
+        load_state_dict(model, orig_state_dict=state_dict)
+    else:
+        if device == 'cuda':
+            model = torch.load(model_filepath).cuda()
+        else:
+            model = torch.load(model_filepath, map_location='cpu')
+
+
+
     target_layers = []
     model_type = model.__class__.__name__
     children = list(model.children())
@@ -2511,7 +2632,10 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
                 else:
                     nchildren.append(c)
             children = nchildren
+        children.insert(2, torch.nn.ReLU(inplace=True))
+        children.insert(-1, torch.nn.AdaptiveAvgPool2d((1, 1)))
         children.insert(-1, torch.nn.Flatten())
+
         if resnet_sample_resblock:
             target_layers = ['Bottleneck', 'BatchNorm2d']
         else:
@@ -2606,9 +2730,9 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         # img = np.stack((b, g, r), axis=2)
 
         h, w, c = img.shape
-        dx = int((w - 224) / 2)
-        dy = int((w - 224) / 2)
-        img = img[dy:dy+224, dx:dx+224, :]
+        dx = int((w - IMG_ROW) / 2)
+        dy = int((w - IMG_ROW) / 2)
+        img = img[dy:dy+IMG_ROW, dx:dx+IMG_ROW, :]
 
         # perform tensor formatting and normalization explicitly
         # convert to CHW dimension ordering
@@ -2678,9 +2802,11 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
     neuron_dict = {}
 
     maxes, maxes_per_label, sample_layers, n_neurons_dict, top_check_labels_list =  check_values( test_xs, test_ys, model, children, target_layers, num_classes)
-    torch.cuda.empty_cache()
+    if device == 'cuda':
+        torch.cuda.empty_cache()
     all_ps, sample_layers = sample_neuron(sample_layers, sample_xs, sample_ys, model, children, target_layers, model_type, maxes, maxes_per_label)
-    torch.cuda.empty_cache()
+    if device == 'cuda':
+        torch.cuda.empty_cache()
     nds, npls = read_all_ps(model_filepath, all_ps, sample_layers, num_classes, top_k = top_n_neurons)
     neurons_add = []
     for idx, nd in enumerate(nds):
@@ -2757,6 +2883,24 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         # f.write('{0} {1} {2} {3} {4} {5} {6} {7}\n'.format(\
         #         model_filepath, model_type, 'mode', freasr, freasr_per_label, 'time', sample_end - start, optm_end - sample_end) )
         f.write('mask {0} {1} {2}\n'.format(model_filepath, freasr, freasr_per_label, ))
+'''
+class Avgpool2d(nn.Module):
+    def __init__(self):
+        super(Avgpool2d, self).__init__()
+
+    def forward(self, x):
+        x = F.avg_pool2d(x, 4)
+        return x
+
+
+class Relu(nn.Module):
+    def __init__(self):
+        super(Relu, self).__init__()
+
+    def forward(self, x):
+        x = F.relu(x)
+        return x
+'''
 
 if __name__ == "__main__":
 
