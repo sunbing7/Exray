@@ -2868,6 +2868,7 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
 
     print('#################')
     print(reasrs)
+    print(reasr_per_labels)
     print(label_results)
     print('#################')
 
