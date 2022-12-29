@@ -28,7 +28,7 @@ IMG_CH=3
 
 np.set_printoptions(precision=2, linewidth=200, threshold=10000)
 parser = argparse.ArgumentParser(description='Fake Trojan Detector to Demonstrate Test and Evaluation Infrastructure.')
-parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_sbg.pt')
+parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_base.pt')
 parser.add_argument('--result_filepath', type=str, help='File path to the file where output result should be written. After execution this file should contain a single line with a single floating point trojan probability.', default='./output')
 parser.add_argument('--scratch_dirpath', type=str, help='File path to the folder where scratch disk space exists. This folder will be empty at execution start and will be deleted at completion of execution.', default='./scratch')
 parser.add_argument('--examples_dirpath', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./example')
@@ -1958,7 +1958,7 @@ def mask_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, chi
         temp_model2 = torch.nn.Sequential(*children[layer_i+1:])
 
     bidxs = np.array(np.where(fys==base_label)[0])
-    bfxs = fxs[bidxs]
+    bfxs = fxs[bidxs]   #benign
     if device == 'cuda':
         batch_data = torch.FloatTensor(bfxs).cuda()
     else:
@@ -1968,7 +1968,7 @@ def mask_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, chi
     bbpreds = F.softmax(bblogits, dim=1).cpu().detach().numpy()
     bblogits = bblogits.cpu().detach().numpy()
 
-    tfxs = fxs2[bidxs]
+    tfxs = fxs2[bidxs]  #target
     if device == 'cuda':
         batch_data = torch.FloatTensor(tfxs).cuda()
     else:
@@ -2890,7 +2890,7 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
             f.write('reasr info {0}\n'.format( ' '.join([str(_) for _ in reasr_info[i]]) ))
         # f.write('{0} {1} {2} {3} {4} {5} {6} {7}\n'.format(\
         #         model_filepath, model_type, 'mode', freasr, freasr_per_label, 'time', sample_end - start, optm_end - sample_end) )
-        f.write('mask {0} {1} {2}\n'.format(model_filepath, freasr, freasr_per_label, ))
+        f.write('mask {0} {1} {2} {3}\n'.format(model_filepath, freasr, freasr_per_label, f_id))
 '''
 class Avgpool2d(nn.Module):
     def __init__(self):
