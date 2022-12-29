@@ -28,7 +28,7 @@ IMG_CH=3
 
 np.set_printoptions(precision=2, linewidth=200, threshold=10000)
 parser = argparse.ArgumentParser(description='Fake Trojan Detector to Demonstrate Test and Evaluation Infrastructure.')
-parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_base.pt')
+parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_green.pt')
 parser.add_argument('--result_filepath', type=str, help='File path to the file where output result should be written. After execution this file should contain a single line with a single floating point trojan probability.', default='./output')
 parser.add_argument('--scratch_dirpath', type=str, help='File path to the folder where scratch disk space exists. This folder will be empty at execution start and will be deleted at completion of execution.', default='./scratch')
 parser.add_argument('--examples_dirpath', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./example')
@@ -2846,10 +2846,18 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
     reasr_info = []
     reasrs = []
     reasr_per_labels = []
+    optz_labels = []
+    samp_labels = []
+    base_labels = []
     if len(results) > 0:
         reasrs = []
         for result in results:
             rdelta, rmask, ssim_loss, optz_label, RE_img, RE_mask, RE_delta, samp_label, base_label, acc, mode = result
+
+            optz_labels.append(optz_label)
+            samp_labels.append(samp_label)
+            base_labels.append(base_label)
+
             reasr, reasr_per_label, label_results, inner_diff1, inner_diff2 = test(model, model_type, test_xs, test_ys, children, target_layers, sample_layers, result, scratch_dirpath, num_classes)
             label_results_str = ','.join(['({0}:{1})'.format(_[0], _[1]) for _ in label_results])
             reasrs.append(reasr)
@@ -2870,8 +2878,9 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
     print(reasrs)
     print(reasr_per_labels)
     print(label_results)
-    print(inner_diff1)
-    print(inner_diff2)
+    print(optz_labels)
+    print(samp_labels)
+    print(base_labels)
     print('#################')
 
     optm_end = time.time()
