@@ -31,7 +31,7 @@ parser = argparse.ArgumentParser(description='Fake Trojan Detector to Demonstrat
 parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_green.pt')
 parser.add_argument('--result_filepath', type=str, help='File path to the file where output result should be written. After execution this file should contain a single line with a single floating point trojan probability.', default='./output')
 parser.add_argument('--scratch_dirpath', type=str, help='File path to the folder where scratch disk space exists. This folder will be empty at execution start and will be deleted at completion of execution.', default='./scratch')
-parser.add_argument('--examples_dirpath', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./example')
+parser.add_argument('--examples_dirpath', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./cifar_example')
 parser.add_argument('--config', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./example')
 parser.add_argument('--arch', type=str, default='resnet18',
                     choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'MobileNetV2', 'vgg19_bn', 'vgg11_bn'])
