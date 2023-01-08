@@ -20,20 +20,24 @@ import time
 import models
 from models.selector import *
 from models.resnet_cifar import resnet18
+from models.vgg_cifar import vgg11_bn
+from models.mobilenetv2 import MobileNetV2
 import torch.nn.functional as F
 
 IMG_ROW=32
 IMG_COL=32
 IMG_CH=3
 
+NUM_CLASS=10
+
 np.set_printoptions(precision=2, linewidth=200, threshold=10000)
 parser = argparse.ArgumentParser(description='Fake Trojan Detector to Demonstrate Test and Evaluation Infrastructure.')
-parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_base_cifar_last.th')
+parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_semtrain_dtl_last.th')
 parser.add_argument('--result_filepath', type=str, help='File path to the file where output result should be written. After execution this file should contain a single line with a single floating point trojan probability.', default='./output')
 parser.add_argument('--scratch_dirpath', type=str, help='File path to the folder where scratch disk space exists. This folder will be empty at execution start and will be deleted at completion of execution.', default='./scratch')
 parser.add_argument('--examples_dirpath', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./cifar_example')
 parser.add_argument('--config', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./example')
-parser.add_argument('--arch', type=str, default='resnet18',
+parser.add_argument('--arch', type=str, default='vgg11_bn',
                     choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'MobileNetV2', 'vgg19_bn', 'vgg11_bn'])
 args = parser.parse_args()
 
@@ -2600,7 +2604,17 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
     os.system('mkdir -p {0}'.format(os.path.join(scratch_dirpath, 'temps')))
     os.system('mkdir -p {0}'.format(os.path.join(scratch_dirpath, 'deltas')))
     if args.arch == 'resnet18':
-        model = resnet18(num_classes=10).to(device)
+        model = resnet18(num_classes=NUM_CLASS).to(device)
+
+        state_dict = torch.load(model_filepath, map_location=device)
+        load_state_dict(model, orig_state_dict=state_dict)
+    elif args.arch == 'vgg11_bn':
+        model = vgg11_bn(num_classes=NUM_CLASS).to(device)
+
+        state_dict = torch.load(model_filepath, map_location=device)
+        load_state_dict(model, orig_state_dict=state_dict)
+    elif args.arch == 'vgg11_bn':
+        model = MobileNetV2(num_classes=NUM_CLASS).to(device)
 
         state_dict = torch.load(model_filepath, map_location=device)
         load_state_dict(model, orig_state_dict=state_dict)
