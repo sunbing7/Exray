@@ -32,7 +32,7 @@ NUM_CLASS=43
 
 np.set_printoptions(precision=2, linewidth=200, threshold=10000)
 parser = argparse.ArgumentParser(description='Fake Trojan Detector to Demonstrate Test and Evaluation Infrastructure.')
-parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_semtrain_dtl_last.th')
+parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_semtrain_dkl_last.th')
 parser.add_argument('--result_filepath', type=str, help='File path to the file where output result should be written. After execution this file should contain a single line with a single floating point trojan probability.', default='./output')
 parser.add_argument('--scratch_dirpath', type=str, help='File path to the folder where scratch disk space exists. This folder will be empty at execution start and will be deleted at completion of execution.', default='./scratch')
 parser.add_argument('--examples_dirpath', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./gtsrb_example')
@@ -2636,7 +2636,7 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
 
     print('num classes', num_classes)
 
-    if model_type  == 'ResNet':
+    if model_type  == 'ResNet': #semantic modify
         children = list(model.children())
         if resnet_sample_resblock:
             nchildren = []
@@ -2677,7 +2677,7 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         children = list(model.children())
         children.insert(-2, torch.nn.Flatten())
         target_layers = ['Inception']
-    elif model_type == 'MobileNetV2':
+    elif model_type == 'MobileNetV2':   #semantic modify
         children = list(model.children())
         nchildren = []
         for c in children:
@@ -2686,9 +2686,11 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
             else:
                 nchildren.append(c)
         children = nchildren
-        children.insert(-2, torch.nn.AdaptiveAvgPool2d((1, 1)))
+        children.insert(2, torch.nn.ReLU(inplace=True))
+        children.insert(-1, torch.nn.ReLU(inplace=True))
+        children.insert(-1, torch.nn.AdaptiveAvgPool2d((1, 1)))
         children.insert(-1, torch.nn.Flatten())
-        target_layers = ['InvertedResidual']
+        target_layers = ['BatchNorm2d']
     elif model_type == 'ShuffleNetV2':
         children = list(model.children())
         nchildren = []
@@ -2736,6 +2738,8 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
     for fn in fns:
         # read the image (using skimage)
         img = skimage.io.imread(fn)
+        if IMG_CH == 1:
+            img = np.expand_dims(img, -1)
         fys.append(int(fn.split('_')[-3]))
         # # convert to BGR (training codebase uses cv2 to load images which uses bgr format)
         # r = img[:, :, 0]
