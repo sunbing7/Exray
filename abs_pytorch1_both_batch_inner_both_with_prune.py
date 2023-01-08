@@ -1464,6 +1464,10 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
             handle = tmodule4.register_forward_hook(get_after_bns())
             handles.append(handle)
     elif model_type == 'MobileNetV2':
+        tmodule1 = children[Troj_Layer]
+        handle = tmodule1.register_forward_hook(get_after_bns())
+        handles.append(handle)
+        '''
         target_module = list(children[Troj_Layer].modules())[-1]
         handle = target_module.register_forward_hook(get_after_bns())
         handles.append(handle)
@@ -1472,6 +1476,7 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
             iden_module = list(children[Troj_Layer].modules())[0]
             handle = iden_module.register_forward_hook(get_before_block())
             handles.append(handle)
+        '''
     elif model_type == 'ShuffleNetV2':
         children_modules = list(children[Troj_Layer].children())
         print('Troj_Layer', children[Troj_Layer])
