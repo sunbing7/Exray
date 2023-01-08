@@ -28,7 +28,7 @@ IMG_ROW=32
 IMG_COL=32
 IMG_CH=3
 
-NUM_CLASS=10
+NUM_CLASS=43
 
 np.set_printoptions(precision=2, linewidth=200, threshold=10000)
 parser = argparse.ArgumentParser(description='Fake Trojan Detector to Demonstrate Test and Evaluation Infrastructure.')
