@@ -24,20 +24,20 @@ from models.vgg_cifar import vgg11_bn
 from models.mobilenetv2 import MobileNetV2
 import torch.nn.functional as F
 
-IMG_ROW=32
-IMG_COL=32
-IMG_CH=3
+IMG_ROW=28
+IMG_COL=28
+IMG_CH=1
 
-NUM_CLASS=43
+NUM_CLASS=10
 
 np.set_printoptions(precision=2, linewidth=200, threshold=10000)
 parser = argparse.ArgumentParser(description='Fake Trojan Detector to Demonstrate Test and Evaluation Infrastructure.')
-parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_base_gtsrb_last.th')
+parser.add_argument('--model_filepath', type=str, help='File path to the pytorch model file to be evaluated.', default='./model_semtrain_stripet_last.th')
 parser.add_argument('--result_filepath', type=str, help='File path to the file where output result should be written. After execution this file should contain a single line with a single floating point trojan probability.', default='./output')
 parser.add_argument('--scratch_dirpath', type=str, help='File path to the folder where scratch disk space exists. This folder will be empty at execution start and will be deleted at completion of execution.', default='./scratch')
-parser.add_argument('--examples_dirpath', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./gtsrb_example')
+parser.add_argument('--examples_dirpath', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./fmnist_example')
 parser.add_argument('--config', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./example')
-parser.add_argument('--arch', type=str, default='vgg11_bn',
+parser.add_argument('--arch', type=str, default='MobileNetV2',
                     choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'MobileNetV2', 'vgg19_bn', 'vgg11_bn'])
 args = parser.parse_args()
 
