@@ -23,10 +23,21 @@ from models.resnet_cifar import resnet18
 from models.vgg_cifar import vgg11_bn
 from models.mobilenetv2 import MobileNetV2
 import torch.nn.functional as F
+import torch.nn as nn
 
 IMG_ROW=28
 IMG_COL=28
 IMG_CH=1
+FILTER_SHAPE=4
+IMG_PAD=1
+
+'''
+IMG_ROW=32
+IMG_COL=32
+IMG_CH=3
+FILTER_SHAPE=12
+IMG_PAD=0
+'''
 
 NUM_CLASS=10
 
@@ -209,8 +220,8 @@ def msssim(img1, img2, window_size=11, size_average=True, val_range=None, normal
             ssims.append(sim)
             mcs.append(cs)
 
-        img1 = F.avg_pool2d(img1, (2, 2))
-        img2 = F.avg_pool2d(img2, (2, 2))
+        img1 = F.avg_pool2d(img1, (2, 2), padding=IMG_PAD)   #semantic modify
+        img2 = F.avg_pool2d(img2, (2, 2), padding=IMG_PAD)
 
     ssims = torch.stack(ssims)
     mcs = torch.stack(mcs)
@@ -723,9 +734,9 @@ def filter_preprocess(batch_data, use_delta, cre_batch_size, test_one=False):
     in_data_cal = torch.transpose( torch.zeros_like(batch_data), 1, 3)
     for i in range(cre_batch_size):
         if test_one:
-            in_data_cal[i] = torch.reshape( torch.mm( torch.reshape( in_data_cat[i], (-1,12)), use_delta[0]), [h,w,3])
+            in_data_cal[i] = torch.reshape( torch.mm( torch.reshape( in_data_cat[i], (-1,FILTER_SHAPE)), use_delta[0]), [h,w,IMG_CH])
         else:
-            in_data_cal[i] = torch.reshape( torch.mm( torch.reshape( in_data_cat[i], (-1,12)), use_delta[i]), [h,w,3])
+            in_data_cal[i] = torch.reshape( torch.mm( torch.reshape( in_data_cat[i], (-1,FILTER_SHAPE)), use_delta[i]), [h,w,IMG_CH])
     in_data = torch.transpose(torch.clamp(in_data_cal, 0., 1.), 1, 3)
     return in_data
 
@@ -912,18 +923,19 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
             handle = tmodule4.register_forward_hook(get_after_bns())
             handles.append(handle)
     elif model_type == 'MobileNetV2':   #semantic modify
+        #'''
         tmodule1 = children[Troj_Layer]
         handle = tmodule1.register_forward_hook(get_after_bns())
         handles.append(handle)
         '''
-        target_module = list(children[Troj_Layer].modules())[-1]
+        #target_module = list(children[Troj_Layer].modules())[-1]
         handle = target_module.register_forward_hook(get_after_bns())
         handles.append(handle)
-        print('use res connect', children[Troj_Layer].use_res_connect)
-        if children[Troj_Layer].use_res_connect:
-            iden_module = list(children[Troj_Layer].modules())[0]
-            handle = iden_module.register_forward_hook(get_before_block())
-            handles.append(handle)
+        #print('use res connect', children[Troj_Layer].use_res_connect)
+        #if children[Troj_Layer].use_res_connect:
+        iden_module = list(children[Troj_Layer].modules())[0]
+        handle = iden_module.register_forward_hook(get_before_block())
+        handles.append(handle)
         '''
     elif model_type == 'ShuffleNetV2':
         children_modules = list(children[Troj_Layer].children())
@@ -1008,20 +1020,21 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
         mask.requires_grad = True
         if mode == 'filter':
             if device == 'cuda':
-                delta= torch.rand(ctask_batch_size,12,3).cuda() * 0.0 - 2
+                delta= torch.rand(ctask_batch_size,FILTER_SHAPE, IMG_CH).cuda() * 0.0 - 2
             else:
-                delta = torch.rand(ctask_batch_size, 12, 3) * 0.0 - 2
+                delta = torch.rand(ctask_batch_size, FILTER_SHAPE, IMG_CH) * 0.0 - 2
             delta[:,0,0] = 2
-            delta[:,1,1] = 2
-            delta[:,2,2] = 2
+            if IMG_CH == 3:
+                delta[:,1,1] = 2
+                delta[:,2,2] = 2
             delta.requires_grad = True
             optimizer = torch.optim.Adam([delta], lr=re_filter_lr)
         else:
             # delta = torch.randn(1,3,h,w).cuda()
             if device == 'cuda':
-                delta = torch.rand(ctask_batch_size,3,1,1).cuda() * 2 - 1
+                delta = torch.rand(ctask_batch_size,IMG_CH,1,1).cuda() * 2 - 1
             else:
-                delta = torch.rand(ctask_batch_size, 3, 1, 1) * 2 - 1
+                delta = torch.rand(ctask_batch_size, IMG_CH, 1, 1) * 2 - 1
             delta.requires_grad = True
             optimizer = torch.optim.Adam([delta, mask], lr=re_mask_lr)
         print('before optimizing',)
@@ -1058,9 +1071,9 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
 
                 batch_data = batch_data.repeat([nrepeats,1,1,1])
                 if device == 'cuda':
-                    random_perturbation = torch.rand(cre_batch_size*nrepeats,3,h,w).cuda() * 0.1 - 0.05
+                    random_perturbation = torch.rand(cre_batch_size*nrepeats,IMG_CH,h,w).cuda() * 0.1 - 0.05
                 else:
-                    random_perturbation = torch.rand(cre_batch_size * nrepeats, 3, h, w) * 0.1 - 0.05
+                    random_perturbation = torch.rand(cre_batch_size * nrepeats, IMG_CH, h, w) * 0.1 - 0.05
                 batch_data = batch_data + random_perturbation
                 batch_data = torch.clamp(batch_data, 0., 1.)
                 batch_labels = batch_labels.repeat([nrepeats])
@@ -1537,12 +1550,13 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
     mask.requires_grad = True
     if mode == 'filter':
         if device == 'cuda':
-            delta= torch.rand(cntasks,12,3).cuda() * 0.0 - 2
+            delta= torch.rand(cntasks,FILTER_SHAPE,IMG_CH).cuda() * 0.0 - 2
         else:
-            delta = torch.rand(cntasks, 12, 3) * 0.0 - 2
+            delta = torch.rand(cntasks, FILTER_SHAPE, IMG_CH) * 0.0 - 2
         delta[:,0,0] = 2
-        delta[:,1,1] = 2
-        delta[:,2,2] = 2
+        if IMG_CH == 3:
+            delta[:,1,1] = 2
+            delta[:,2,2] = 2
         delta.requires_grad = True
         optimizer = torch.optim.Adam([delta], lr=re_filter_lr)
     else:
@@ -2687,7 +2701,10 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         nchildren = []
         for c in children:
             if c.__class__.__name__ == 'Sequential':
-                nchildren += list(c.children())
+                for cc in list(c.children()):
+                    if cc.__class__.__name__ == 'Block':
+                        this_childrn = Residual(cc.stride, cc.conv1, cc.bn1, cc.conv2, cc.bn2, cc.conv3, cc.bn3, cc.shortcut)
+                        nchildren += [this_childrn]
             else:
                 nchildren.append(c)
         children = nchildren
@@ -2772,7 +2789,7 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
     fys = np.array(fys)
     image_min = np.mean(image_mins)
     image_max = np.mean(image_maxs)
-    
+
     print('number of seed images', len(fys), fys.shape, 'image min val', np.amin(fxs), 'max val', np.amax(fxs))
 
     test_xs = fxs
@@ -2852,15 +2869,6 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
     print('Compromised Neuron Candidates (Layer, Neuron, Target_Label)', neuron_dict)   # for each label, find sensitive neuron
     print('n_neurons_dict', n_neurons_dict)
 
-    # neuron_dict['/home/share/trojai/trojai-round2-dataset/id-00000001/model.pt'] = [('InvertedResidual_18', 456, 6, 1.8939729, 10)]
-    # neuron_dict['/home/share/trojai/trojai-round2-dataset/id-00000008/model.pt'] = [('Inception_14', 293, 5, 3.1323605, 1),]
-    # neuron_dict['/home/share/trojai/trojai-round2-dataset/id-00000025/model.pt'] = [ ('Sequential_6', 66, 6, 5.391478, 1), ('Sequential_6', 109, 3, 3.830728, 1), ('Sequential_6', 84, 5, 1.4437652, 1), ('Sequential_6', 251, 7, 6.600528, 1),]
-    # neuron_dict['/home/share/trojai/trojai-round2-dataset/id-00000022/model.pt'] = [('Sequential_6', 784, 12, 1.8939729, 10), ('Sequential_6', 946, 9, 1.6068475, 10), ('Sequential_6', 321, 18, 0.811728, 10)]
-    # neuron_dict['/home/share/trojai/trojai-round2-dataset/id-00000026/model.pt'] = [('BatchNorm2d_15', 537, 13, 2.7338848, 15), ('BatchNorm2d_15', 942, 3, 1.9141049, 15), ('BatchNorm2d_15', 601, 17, 1.6031287, 15),('BatchNorm2d_15', 575, 16, 3.062815, 15),('BatchNorm2d_15', 793, 2, 2.7705612, 15)]
-    # 190, 249, 157, 182, 61
-    # neuron_dict['/home/share/trojai/trojai-round2-dataset/id-00000094/model.pt'] = [('Sequential_6', 212, 12, 11.318, 6), ('Sequential_6', 42, 12, 7.334566, 6), ('Sequential_6', 212, 12, 5.0347404, 6), ('Sequential_6', 24, 12, 7.334566, 6), ('Sequential_6', 71, 12, 5.0347404, 6),('Sequential_6', 190, 12, 11.318, 6), ('Sequential_6', 249, 12, 7.334566, 6), ('Sequential_6', 157, 12, 5.0347404, 6), ('Sequential_6', 182, 12, 7.334566, 6), ('Sequential_6', 61, 12, 5.0347404, 6),]
-    # neuron_dict['/home/share/trojai/trojai-round2-dataset/id-00000022/model.pt'] = [('Sequential_6', 756, 5, 3.274704, 0), ('Sequential_6', 98, 17, 1.4651, 0), ('Sequential_6', 181, 14, 4.034249, 0), ('Sequential_6', 971, 0, 5.6566343, 1), ('Sequential_6', 98, 17, 1.813281, 1), ('Sequential_6', 137, 14, 31.934938, 1),]
-
     sample_end = time.time()
 
     # sys.exit()
@@ -2923,6 +2931,27 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         # f.write('{0} {1} {2} {3} {4} {5} {6} {7}\n'.format(\
         #         model_filepath, model_type, 'mode', freasr, freasr_per_label, 'time', sample_end - start, optm_end - sample_end) )
         f.write('mask {0} {1} {2} {3}\n'.format(model_filepath, freasr, freasr_per_label, f_id))
+
+
+class Residual(nn.Module):
+    def __init__(self, stride, conv1, bn1, conv2, bn2, conv3, bn3, shortcut):
+        super(Residual, self).__init__()
+        self.stride = stride
+        self.conv1 = conv1
+        self.bn1 = bn1
+        self.conv2 = conv2
+        self.bn2 = bn2
+        self.conv3 = conv3
+        self.bn3 = bn3
+        self.shortcut = shortcut
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
+        out = out + self.shortcut(x) if self.stride==1 else out
+        return out
+
+
 '''
 class Avgpool2d(nn.Module):
     def __init__(self):
