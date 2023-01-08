@@ -2613,7 +2613,7 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
 
         state_dict = torch.load(model_filepath, map_location=device)
         load_state_dict(model, orig_state_dict=state_dict)
-    elif args.arch == 'vgg11_bn':
+    elif args.arch == 'MobileNetV2':
         model = MobileNetV2(num_classes=NUM_CLASS).to(device)
 
         state_dict = torch.load(model_filepath, map_location=device)
