@@ -1463,7 +1463,7 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
             handles.append(handle)
             handle = tmodule4.register_forward_hook(get_after_bns())
             handles.append(handle)
-    elif model_type == 'MobileNetV2':
+    elif model_type == 'MobileNetV2':   #semantic modify
         tmodule1 = children[Troj_Layer]
         handle = tmodule1.register_forward_hook(get_after_bns())
         handles.append(handle)
@@ -1567,9 +1567,9 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
     else:
         # delta = torch.randn(1,3,h,w).cuda()
         if device == 'cuda':
-            delta = torch.rand(cntasks,3,1,1).cuda() * 2 - 1
+            delta = torch.rand(cntasks,IMG_CH,1,1).cuda() * 2 - 1
         else:
-            delta = torch.rand(cntasks, 3, 1, 1) * 2 - 1
+            delta = torch.rand(cntasks, IMG_CH, 1, 1) * 2 - 1
         delta.requires_grad = True
         optimizer = torch.optim.Adam([delta, mask], lr=re_mask_lr)
     facc = 0
@@ -1600,9 +1600,9 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
 
             batch_data = batch_data.repeat([nrepeats,1,1,1])
             if device == 'cuda':
-                random_perturbation = torch.rand(cre_batch_size*nrepeats,3,h,w).cuda() * 0.1 - 0.05
+                random_perturbation = torch.rand(cre_batch_size*nrepeats,IMG_CH,h,w).cuda() * 0.1 - 0.05
             else:
-                random_perturbation = torch.rand(cre_batch_size * nrepeats, 3, h, w) * 0.1 - 0.05
+                random_perturbation = torch.rand(cre_batch_size * nrepeats, IMG_CH, h, w) * 0.1 - 0.05
             batch_data = batch_data + random_perturbation
             batch_data = torch.clamp(batch_data, 0., 1.)
             batch_labels = batch_labels.repeat([nrepeats])
