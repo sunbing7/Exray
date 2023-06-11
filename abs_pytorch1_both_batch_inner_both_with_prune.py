@@ -22,6 +22,9 @@ from models.selector import *
 from models.resnet_cifar import resnet18
 from models.vgg_cifar import vgg11_bn
 from models.mobilenetv2 import MobileNetV2
+from models.densenet import densenet
+from models.mobilenet import MobileNet
+from models.shufflenetv2 import shufflenetv2
 import torch.nn.functional as F
 import torch.nn as nn
 '''
@@ -2654,6 +2657,21 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         load_state_dict(model, orig_state_dict=state_dict)
     elif args.arch == 'MobileNetV2':
         model = MobileNetV2(num_classes=NUM_CLASS).to(device)
+
+        state_dict = torch.load(model_filepath, map_location=device)
+        load_state_dict(model, orig_state_dict=state_dict)
+    elif args.arch == 'MobileNet':
+        model = MobileNet(num_classes=NUM_CLASS).to(device)
+
+        state_dict = torch.load(model_filepath, map_location=device)
+        load_state_dict(model, orig_state_dict=state_dict)
+    elif args.arch == 'densenet':
+        model = densenet(num_classes=NUM_CLASS).to(device)
+
+        state_dict = torch.load(model_filepath, map_location=device)
+        load_state_dict(model, orig_state_dict=state_dict)
+    elif args.arch == 'shufflenetv2':
+        model = shufflenetv2(num_classes=NUM_CLASS).to(device)
 
         state_dict = torch.load(model_filepath, map_location=device)
         load_state_dict(model, orig_state_dict=state_dict)
