@@ -292,7 +292,8 @@ def check_values(images, labels, model, children, target_layers, num_classes):
         if not children[layer_i].__class__.__name__ in target_layers:
             continue
         sample_layers.append(layer_i)
-    sample_layers = sample_layers[-2:-1]
+    if len(sample_layers) != 1:
+        sample_layers = sample_layers[-2:-1]
 
     n_neurons_dict = {}
     for layer_i in sample_layers:
@@ -956,6 +957,11 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
         handle = iden_module.register_forward_hook(get_before_block())
         handles.append(handle)
         '''
+    elif model_type == 'MobileNet':   #semantic modify
+        #'''
+        tmodule1 = children[Troj_Layer]
+        handle = tmodule1.register_forward_hook(get_after_bns())
+        handles.append(handle)
     elif model_type == 'ShuffleNetV2':
         children_modules = list(children[Troj_Layer].children())
         print('Troj_Layer', children[Troj_Layer])
