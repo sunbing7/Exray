@@ -24,14 +24,15 @@ from models.vgg_cifar import vgg11_bn
 from models.mobilenetv2 import MobileNetV2
 import torch.nn.functional as F
 import torch.nn as nn
-
+'''
 IMG_ROW=28
 IMG_COL=28
 IMG_CH=1
 FILTER_SHAPE=4
 IMG_PAD=1
+NUM_CLASS=10
 
-'''
+
 IMG_ROW=32
 IMG_COL=32
 IMG_CH=3
@@ -39,7 +40,7 @@ FILTER_SHAPE=12
 IMG_PAD=0
 '''
 
-NUM_CLASS=10
+
 
 np.set_printoptions(precision=2, linewidth=200, threshold=10000)
 parser = argparse.ArgumentParser(description='Fake Trojan Detector to Demonstrate Test and Evaluation Infrastructure.')
@@ -50,7 +51,21 @@ parser.add_argument('--examples_dirpath', type=str, help='File path to the folde
 parser.add_argument('--config', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./example')
 parser.add_argument('--arch', type=str, default='MobileNetV2',
                     choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'MobileNetV2', 'vgg19_bn', 'vgg11_bn'])
+parser.add_argument('--input_width', type=int, default=224)
+parser.add_argument('--input_height', type=int, default=224)
+parser.add_argument('--channels', type=int, default=3)
+parser.add_argument('--batch_size', type=int, default=32)
+parser.add_argument('--num_classes',type=int,default=0)
+parser.add_argument('--img_pad',type=int,default=0)
+parser.add_argument('--filter_shape',type=int,default=0)
 args = parser.parse_args()
+
+IMG_ROW=args.input_width
+IMG_COL=args.input_height
+IMG_CH=args.channels
+FILTER_SHAPE=args.filter_shape
+IMG_PAD=args.img_pad
+NUM_CLASS=args.num_classes
 
 # with open(args.config) as config_file:
     # config = json.load(config_file)
