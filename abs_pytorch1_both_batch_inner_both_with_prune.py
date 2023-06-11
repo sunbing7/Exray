@@ -53,7 +53,8 @@ parser.add_argument('--scratch_dirpath', type=str, help='File path to the folder
 parser.add_argument('--examples_dirpath', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./fmnist_example')
 parser.add_argument('--config', type=str, help='File path to the folder of examples which might be useful for determining whether a model is poisoned.', default='./example')
 parser.add_argument('--arch', type=str, default='MobileNetV2',
-                    choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'MobileNetV2', 'vgg19_bn', 'vgg11_bn'])
+                    choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'MobileNetV2', 'vgg19_bn',
+                             'vgg11_bn', 'MobileNet', 'densenet', 'shufflenetv2'])
 parser.add_argument('--input_width', type=int, default=224)
 parser.add_argument('--input_height', type=int, default=224)
 parser.add_argument('--channels', type=int, default=3)
