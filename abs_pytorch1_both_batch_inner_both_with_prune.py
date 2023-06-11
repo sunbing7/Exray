@@ -2735,6 +2735,22 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         children = list(model.children())
         children.insert(-2, torch.nn.Flatten())
         target_layers = ['Inception']
+    elif model_type == 'MobileNet':   #semantic modify
+        children = list(model.children())
+        nchildren = []
+        for c in children:
+            if c.__class__.__name__ == 'Sequential':
+                for cc in list(c.children()):
+                    if cc.__class__.__name__ == 'Block':
+                        this_childrn = Residual(cc.stride, cc.conv1, cc.bn1, cc.conv2, cc.bn2, cc.conv3, cc.bn3, cc.shortcut)
+                        nchildren += [this_childrn]
+            else:
+                nchildren.append(c)
+        children = nchildren
+        children.insert(2, torch.nn.ReLU(inplace=True))
+        children.insert(-1, torch.nn.AdaptiveAvgPool2d((1, 1)))
+        children.insert(-1, torch.nn.Flatten())
+        target_layers = ['BatchNorm2d']
     elif model_type == 'MobileNetV2':   #semantic modify
         children = list(model.children())
         nchildren = []
