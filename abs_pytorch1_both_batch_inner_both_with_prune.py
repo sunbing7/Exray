@@ -2742,7 +2742,7 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
             if c.__class__.__name__ == 'Sequential':
                 for cc in list(c.children()):
                     if cc.__class__.__name__ == 'Block':
-                        this_childrn = Residual(cc.stride, cc.conv1, cc.bn1, cc.conv2, cc.bn2, cc.conv3, cc.bn3, cc.shortcut)
+                        this_childrn = ResidualV1(1, cc.conv1, cc.bn1, cc.conv2, cc.bn2)
                         nchildren += [this_childrn]
             else:
                 nchildren.append(c)
@@ -3007,6 +3007,20 @@ class Residual(nn.Module):
         return out
 
 
+class ResidualV1(nn.Module):
+    def __init__(self, stride, conv1, bn1, conv2, bn2):
+        super(ResidualV1, self).__init__()
+        self.stride = stride
+        self.conv1 = conv1
+        self.bn1 = bn1
+        self.conv2 = conv2
+        self.bn2 = bn2
+
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.bn2(self.conv2(out)))
+
+        return out
 '''
 class Avgpool2d(nn.Module):
     def __init__(self):
