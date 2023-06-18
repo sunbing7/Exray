@@ -104,7 +104,7 @@ config['re_filter_lr'] = 1e-1
 config['re_mask_weight'] = 100
 config['mask_multi_start'] = 1
 config['re_epochs'] = 30
-config['n_re_imgs_per_label'] = 2#sunbing debug20
+config['n_re_imgs_per_label'] = 20
 logfile = 'log1_both_batch_inner_filter_prune.txt'
 config['logfile'] = logfile
 
@@ -2199,12 +2199,9 @@ def mask_prune_by_neuron_mask(fxs, fys, fxs2, base_label, optz_label, model, chi
             else:
                 print('error data_option', ndata_option)
                 sys.exit()
-            print('[DEBUG]nuse_mask.shape:{}'.format(nuse_mask.shape))
-            print('[DEBUG]ninner_data_1.shape:{}'.format(ninner_data_1.shape))
-            print('[DEBUG]ninner_data_2.shape:{}'.format(ninner_data_2.shape))
-            min_len = min(len(ninner_data_1), len(ninner_data_2))
-            mixed_data_1 = nuse_mask * ninner_data_2[:min_len] + (1-nuse_mask) * ninner_data_1[:min_len]
-            mixed_data_2 = nuse_mask * ninner_data_1[:min_len] + (1-nuse_mask) * ninner_data_2[:min_len]
+
+            mixed_data_1 = nuse_mask * ninner_data_2 + (1-nuse_mask) * ninner_data_1
+            mixed_data_2 = nuse_mask * ninner_data_1 + (1-nuse_mask) * ninner_data_2
             if device == 'cuda':
                 mixed_data_1 = torch.FloatTensor(mixed_data_1).cuda()
                 mixed_data_2 = torch.FloatTensor(mixed_data_2).cuda()
@@ -2993,6 +2990,7 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         # f.write('{0} {1} {2} {3} {4} {5} {6} {7}\n'.format(\
         #         model_filepath, model_type, 'mode', freasr, freasr_per_label, 'time', sample_end - start, optm_end - sample_end) )
         f.write('mask {0} {1} {2} {3}\n'.format(model_filepath, freasr, freasr_per_label, f_id))
+        print('mask {0} {1} {2} {3}\n'.format(model_filepath, freasr, freasr_per_label, f_id))
 
 
 class Residual(nn.Module):
