@@ -104,7 +104,7 @@ config['re_filter_lr'] = 1e-1
 config['re_mask_weight'] = 100
 config['mask_multi_start'] = 1
 config['re_epochs'] = 30
-config['n_re_imgs_per_label'] = 20
+config['n_re_imgs_per_label'] = 2#sunbing debug20
 logfile = 'log1_both_batch_inner_filter_prune.txt'
 config['logfile'] = logfile
 
@@ -2687,8 +2687,6 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
             model = torch.load(model_filepath).cuda()
         else:
             model = torch.load(model_filepath, map_location='cpu')
-
-
 
     target_layers = []
     model_type = model.__class__.__name__
