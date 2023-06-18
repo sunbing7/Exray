@@ -59,7 +59,9 @@ parser.add_argument('--examples_format', type=str, default='png')
 parser.add_argument('--input_width', type=int, default=224)
 parser.add_argument('--input_height', type=int, default=224)
 parser.add_argument('--channels', type=int, default=3)
-parser.add_argument('--batch_size', type=int, default=32)
+parser.add_argument('--batch_size', type=int, default=4)
+parser.add_argument('--samp_batch_size', type=int, default=32)
+parser.add_argument('--re_batch_size', type=int, default=60)
 parser.add_argument('--num_classes',type=int,default=0)
 parser.add_argument('--img_pad',type=int,default=0)
 parser.add_argument('--filter_shape',type=int,default=0)
@@ -83,12 +85,12 @@ config['channel_last'] = 0
 config['w'] = IMG_ROW
 config['h'] = IMG_COL
 config['reasr_bound'] = 0.8
-config['batch_size'] = 2
+config['batch_size'] = args.batch_size
 config['has_softmax'] = 0
 config['samp_k'] = 2.0
 config['same_range'] = 0
 config['n_samples'] = 3
-config['samp_batch_size'] = args.batch_size#32
+config['samp_batch_size'] = args.samp_batch_size
 config['top_n_neurons'] = 3
 config['top_n_check_labels'] = 3
 config['n_sample_imgs_per_label'] = 2
@@ -96,7 +98,7 @@ config['max_neuron_per_label'] = 1
 config['nrepeats'] = 1
 config['tasks_per_run'] = 5
 config['n_try_epochs'] = 4
-config['re_batch_size'] = 30
+config['re_batch_size'] = args.re_batch_size
 config['max_troj_size'] = 1600
 config['filter_multi_start'] = 1
 # config['re_mask_lr'] = 1e-1
@@ -1195,6 +1197,14 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
                     else:
                         inner_outputs_b = after_conv
                     inner_outputs_a = F.relu(inner_outputs_b)
+                elif model_type == 'MobileNet':
+                    after_conv = torch.stack(after_bns, 0)
+                    if len(before_block) > 0:
+                        iden = before_block[0]
+                        inner_outputs_b = after_conv + iden
+                    else:
+                        inner_outputs_b = after_conv
+                    inner_outputs_a = F.relu(inner_outputs_b)
                 elif model_type == 'ShuffleNetV2':
                     before_relu = torch.stack(after_bns, 0)
                     after_relu = F.relu(before_relu)
@@ -1505,6 +1515,10 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
             handle = iden_module.register_forward_hook(get_before_block())
             handles.append(handle)
         '''
+    elif model_type == 'MobileNet':  # semantic
+        tmodule1 = children[Troj_Layer]
+        handle = tmodule1.register_forward_hook(get_after_bns())
+        handles.append(handle)
     elif model_type == 'ShuffleNetV2':
         children_modules = list(children[Troj_Layer].children())
         print('Troj_Layer', children[Troj_Layer])
@@ -1721,6 +1735,14 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
                 inner_outputs_b = torch.cat([after_bn1_t, after_bn2_t, after_bn3_t, after_bn4_t], 1)
                 inner_outputs_a = F.relu(inner_outputs_b)
             elif model_type == 'MobileNetV2':
+                after_conv = torch.stack(after_bns, 0)
+                if len(before_block) > 0:
+                    iden = before_block[0]
+                    inner_outputs_b = after_conv + iden
+                else:
+                    inner_outputs_b = after_conv
+                inner_outputs_a = F.relu(inner_outputs_b)
+            elif model_type == 'MobileNet':
                 after_conv = torch.stack(after_bns, 0)
                 if len(before_block) > 0:
                     iden = before_block[0]
