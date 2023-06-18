@@ -19,7 +19,7 @@ import time
 
 import models
 from models.selector import *
-from models.resnet_cifar import resnet18
+from models.resnet_cifar import resnet18, resnet50
 from models.vgg_cifar import vgg11_bn
 from models.mobilenetv2 import MobileNetV2
 from models.densenet import densenet
@@ -55,6 +55,7 @@ parser.add_argument('--config', type=str, help='File path to the folder of examp
 parser.add_argument('--arch', type=str, default='MobileNetV2',
                     choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'MobileNetV2', 'vgg19_bn',
                              'vgg11_bn', 'MobileNet', 'densenet', 'shufflenetv2'])
+parser.add_argument('--examples_format', type=str, default='png')
 parser.add_argument('--input_width', type=int, default=224)
 parser.add_argument('--input_height', type=int, default=224)
 parser.add_argument('--channels', type=int, default=3)
@@ -299,6 +300,7 @@ def check_values(images, labels, model, children, target_layers, num_classes):
     for layer_i in sample_layers:
         if not children[layer_i].__class__.__name__ in target_layers:
             continue
+
         temp_model1 = torch.nn.Sequential(*children[:layer_i+1])
 
         max_vals = []
@@ -306,6 +308,7 @@ def check_values(images, labels, model, children, target_layers, num_classes):
             batch_data = torch.FloatTensor(images[batch_size*i:batch_size*(i+1)])
             if device == 'cuda':
                 batch_data = batch_data.cuda()
+
             inner_outputs = temp_model1(batch_data).cpu().detach().numpy()
             if channel_last:
                 n_neurons = inner_outputs.shape[-1]
@@ -817,7 +820,7 @@ def test_task_modes(model_type, model, children, oimages, olabels, weights_file,
     print('oimages', len(oimages), oimages.shape, olabels.shape, 're_batch_size', re_batch_size)
 
     handles = []
-    if model_type == 'ResNet':
+    if model_type == 'ResNet': #semantic
         if resnet_sample_resblock:
             children_modules = list(children[Troj_Layer].children())
         else:
@@ -1363,7 +1366,7 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
     print('oimages', len(oimages), oimages.shape, olabels.shape, 're_batch_size', re_batch_size)
 
     handles = []
-    if model_type == 'ResNet':
+    if model_type == 'ResNet':  #semantic
         if resnet_sample_resblock:
             children_modules = list(children[Troj_Layer].children())
         else:
@@ -1488,7 +1491,7 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
             handles.append(handle)
             handle = tmodule4.register_forward_hook(get_after_bns())
             handles.append(handle)
-    elif model_type == 'MobileNetV2':   #semantic modify
+    elif model_type == 'MobileNetV2':   #semantic
         tmodule1 = children[Troj_Layer]
         handle = tmodule1.register_forward_hook(get_after_bns())
         handles.append(handle)
@@ -2652,8 +2655,13 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
     os.system('mkdir -p {0}'.format(os.path.join(scratch_dirpath, 'masks')))
     os.system('mkdir -p {0}'.format(os.path.join(scratch_dirpath, 'temps')))
     os.system('mkdir -p {0}'.format(os.path.join(scratch_dirpath, 'deltas')))
-    if args.arch == 'resnet18':
+    if args.arch == 'resnet18': #semantic
         model = resnet18(num_classes=NUM_CLASS).to(device)
+
+        state_dict = torch.load(model_filepath, map_location=device)
+        load_state_dict(model, orig_state_dict=state_dict)
+    elif args.arch == 'resnet50':   #semantic
+        model = resnet50(num_classes=NUM_CLASS).to(device)
 
         state_dict = torch.load(model_filepath, map_location=device)
         load_state_dict(model, orig_state_dict=state_dict)
@@ -2698,7 +2706,7 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
 
     print('num classes', num_classes)
 
-    if model_type  == 'ResNet': #semantic modify
+    if model_type  == 'ResNet': #semantic
         children = list(model.children())
         if resnet_sample_resblock:
             nchildren = []
@@ -2723,10 +2731,10 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         target_layers = ['InceptionA', 'InceptionB', 'InceptionC', 'InceptionD', 'InceptionE']
     elif model_type == 'DenseNet':
         children = list(model.children())
-        children = list(children[0].children()) + children[1:]
+        #children = list(children[0].children()) + children[1:]
         nchildren = []
         for c in children:
-            if c.__class__.__name__ == '_Transition':
+            if c.__class__.__name__ == 'Transition':
                 nchildren += list(c.children())
             else:
                 nchildren.append(c)
@@ -2739,8 +2747,9 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         children = list(model.children())
         children.insert(-2, torch.nn.Flatten())
         target_layers = ['Inception']
-    elif model_type == 'MobileNet':   #semantic modify
+    elif model_type == 'MobileNet':   #semantic
         children = list(model.children())
+        children.insert(2, torch.nn.ReLU(inplace=True))
         nchildren = []
         for c in children:
             if c.__class__.__name__ == 'Sequential':
@@ -2751,11 +2760,10 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
             else:
                 nchildren.append(c)
         children = nchildren
-        children.insert(2, torch.nn.ReLU(inplace=True))
         children.insert(-1, torch.nn.AdaptiveAvgPool2d((1, 1)))
         children.insert(-1, torch.nn.Flatten())
         target_layers = ['BatchNorm2d']
-    elif model_type == 'MobileNetV2':   #semantic modify
+    elif model_type == 'MobileNetV2':   #semantic
         children = list(model.children())
         nchildren = []
         for c in children:
@@ -2781,8 +2789,8 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
             else:
                 nchildren.append(c)
         children = nchildren
-        children.insert(-1, torch.nn.AdaptiveAvgPool2d((1, 1)))
-        children.insert(-1, torch.nn.Flatten())
+        children.insert(-2, torch.nn.AdaptiveAvgPool2d((1, 1)))
+        children.insert(-2, torch.nn.Flatten())
         target_layers = ['InvertedResidual']
     elif model_type == 'SqueezeNet':
         children = list(model.children())
@@ -2821,6 +2829,8 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         img = skimage.io.imread(fn)
         if IMG_CH == 1:
             img = np.expand_dims(img, -1)
+        if 'caltech' in args.examples_dirpath:
+            img = skimage.transform.resize(img, (IMG_ROW, IMG_ROW, IMG_CH), anti_aliasing=True)
         fys.append(int(fn.split('_')[-3]))
         # # convert to BGR (training codebase uses cv2 to load images which uses bgr format)
         # r = img[:, :, 0]
@@ -3047,4 +3057,4 @@ class Relu(nn.Module):
 
 if __name__ == "__main__":
 
-    main(args.model_filepath, args.result_filepath, args.scratch_dirpath, args.examples_dirpath)
+    main(args.model_filepath, args.result_filepath, args.scratch_dirpath, args.examples_dirpath, args.examples_format)
