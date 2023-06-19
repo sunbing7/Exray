@@ -2778,13 +2778,15 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
                 for cc in list(c.children()):
                     if cc.__class__.__name__ == 'Block':
                         this_childrn = ResidualV1(1, cc.conv1, cc.bn1, cc.conv2, cc.bn2)
-                        nchildren += [this_childrn]
+                        #nchildren += [this_childrn]
+                        for ccc in list(this_childrn.children()):
+                            nchildren += [ccc]
             else:
                 nchildren.append(c)
         children = nchildren
         children.insert(-1, torch.nn.AdaptiveAvgPool2d((1, 1)))
         children.insert(-1, torch.nn.Flatten())
-        target_layers = ['AdaptiveAvgPool2d']
+        target_layers = ['BatchNorm2d']
     elif model_type == 'MobileNetV2':   #semantic
         children = list(model.children())
         nchildren = []
