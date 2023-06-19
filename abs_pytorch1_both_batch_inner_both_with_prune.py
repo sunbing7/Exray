@@ -2784,7 +2784,7 @@ def main(model_filepath, result_filepath, scratch_dirpath, examples_dirpath, exa
         children = nchildren
         children.insert(-1, torch.nn.AdaptiveAvgPool2d((1, 1)))
         children.insert(-1, torch.nn.Flatten())
-        target_layers = ['ResidualV1']
+        target_layers = ['AdaptiveAvgPool2d']
     elif model_type == 'MobileNetV2':   #semantic
         children = list(model.children())
         nchildren = []
